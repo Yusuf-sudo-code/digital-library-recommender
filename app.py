@@ -16,11 +16,54 @@ st.set_page_config(
 # Clean, Academic CSS Styling
 st.markdown("""
 <style>
-    .main-header { font-size: 2.1rem; font-weight: 700; margin-bottom: 0.1rem; color: #1e293b; }
-    .sub-caption { color: #64748b; font-size: 0.95rem; margin-bottom: 1.2rem; }
-    .catalog-card { padding: 1.2rem; border-radius: 4px; border: 1px solid #e2e8f0; margin-bottom: 1rem; background-color: #ffffff; }
-    .stat-label { font-size: 0.85rem; color: #64748b; text-transform: uppercase; font-weight: 600; }
-    .stat-val { font-size: 1.1rem; color: #0f172a; font-weight: 700; }
+    /* Sharper Primary Header */
+    .main-header { 
+        font-size: 2.2rem; 
+        font-weight: 800; 
+        margin-bottom: 0.15rem; 
+        color: #0f3460; /* Deep Sharp Navy */
+        letter-spacing: -0.5px;
+    }
+    
+    /* Crisp Sub-caption */
+    .sub-caption { 
+        color: #475569; 
+        font-size: 0.98rem; 
+        font-weight: 500;
+        margin-bottom: 1.4rem; 
+    }
+    
+    /* Section Subheadings (e.g. Recommended Materials, Reading Shelf) */
+    h3 {
+        color: #1a365d !important;
+        font-weight: 700 !important;
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 6px;
+        margin-bottom: 15px;
+    }
+    
+    /* Card Book Titles */
+    h4 {
+        color: #0f3460 !important;
+        font-weight: 700 !important;
+        margin-bottom: 4px;
+    }
+    
+    /* Sidebar Headers */
+    .css-16idsys p, .st-emotion-cache-16idsys p, .stSidebar h3 {
+        color: #0f3460 !important;
+        font-weight: 700 !important;
+    }
+    
+    /* Clean Card Container */
+    .catalog-card { 
+        padding: 1.2rem; 
+        border-radius: 6px; 
+        border: 1px solid #cbd5e1; 
+        border-left: 4px solid #0f3460; /* Sharp accent edge */
+        margin-bottom: 1rem; 
+        background-color: #ffffff; 
+    }
 </style>
 """, unsafe_allow_html=True)
 
