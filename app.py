@@ -5,14 +5,38 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
 from surprise import Dataset, Reader, SVD
 
-# 1. Page Configuration
+# ==========================================
+# 1. PAGE CONFIGURATION & CUSTOM STYLING
+# ==========================================
 st.set_page_config(
-    page_title="Digital Library | Book Recommender",
+    page_title="Digital Library | Personalized Portal",
     page_icon="📚",
     layout="wide"
 )
 
-# 2. Hybrid Engine Class
+# Custom Clean CSS Styling
+st.markdown("""
+<style>
+    .main-header { font-size: 2.2rem; font-weight: 700; margin-bottom: 0.2rem; }
+    .sub-header { color: #555; font-size: 1.1rem; margin-bottom: 1.5rem; }
+    .book-card { padding: 1rem; border-radius: 8px; border: 1px solid #e0e0e0; margin-bottom: 1rem; background-color: #ffffff; }
+    .metric-box { background-color: #f8f9fa; padding: 0.5rem; border-radius: 6px; text-align: center; border: 1px solid #eee; }
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 2. SESSION STATE MANAGEMENT
+# ==========================================
+if "user_logged_in" not in st.session_state:
+    st.session_state.user_logged_in = False
+if "username" not in st.session_state:
+    st.session_state.username = ""
+if "my_ratings" not in st.session_state:
+    st.session_state.my_ratings = {}  # {book_id: rating}
+
+# ==========================================
+# 3. ENGINE CLASS
+# ==========================================
 class DigitalLibraryHybridRecommender:
     def __init__(self, books_df: pd.DataFrame, ratings_df: pd.DataFrame):
         self.books = books_df.copy()
@@ -51,10 +75,9 @@ class DigitalLibraryHybridRecommender:
         recs['content_score'] = cosine_sim[similar_indices]
         return recs
 
-    def recommend_for_user(self, user_id: int, top_k: int = 5, alpha: float = 0.6) -> pd.DataFrame:
-        user_ratings = self.ratings[self.ratings['user_id'] == user_id]
-        
-        if user_ratings.empty:
+    def recommend_for_custom_profile(self, user_ratings_dict: dict, top_k: int = 5, alpha: float = 0.6) -> pd.DataFrame:
+        if not user_ratings_dict:
+            # Cold-start fallback
             top_books = self.ratings.groupby('book_id')['rating'].agg(['count', 'mean'])
             top_books = top_books[top_books['count'] >= 5].sort_values(by='mean', ascending=False)
             cold_recs = self.books[self.books['book_id'].isin(top_books.index)].head(top_k).copy()
@@ -63,7 +86,7 @@ class DigitalLibraryHybridRecommender:
             cold_recs['hybrid_score'] = 0.5
             return cold_recs
 
-        top_user_books = user_ratings.sort_values(by='rating', ascending=False).head(3)['book_id']
+        top_user_books = [b_id for b_id, r in sorted(user_ratings_dict.items(), key=lambda x: x[1], reverse=True)[:3]]
         candidate_ids = set()
         
         for b_id in top_user_books:
@@ -71,7 +94,7 @@ class DigitalLibraryHybridRecommender:
             if not content_sims.empty:
                 candidate_ids.update(content_sims['book_id'].tolist())
 
-        read_books = set(user_ratings['book_id'].tolist())
+        read_books = set(user_ratings_dict.keys())
         candidate_ids = candidate_ids - read_books
         
         if not candidate_ids:
@@ -81,7 +104,9 @@ class DigitalLibraryHybridRecommender:
         for b_id in candidate_ids:
             if b_id not in self.indices:
                 continue
-            pred_rating = self.svd_model.predict(user_id, b_id).est
+            
+            # Predict collaborative score using baseline latent parameters
+            pred_rating = self.svd_model.predict(uid=999999, iid=b_id).est
             norm_collab_score = (pred_rating - 1.0) / 4.0
             
             idx = self.indices[b_id]
@@ -102,25 +127,25 @@ class DigitalLibraryHybridRecommender:
         results_df = pd.DataFrame(scored_candidates).sort_values(by='hybrid_score', ascending=False).head(top_k)
         return results_df.merge(self.books[['book_id', 'title', 'authors', 'genres', 'image_url']], on='book_id', how='left')
 
-# 3. Data & Model Caching
+# ==========================================
+# 4. DATA & CACHING
+# ==========================================
 @st.cache_data
 def load_data():
     books_url = 'https://raw.githubusercontent.com/zygmuntz/goodbooks-10k/master/books.csv'
     ratings_url = 'https://raw.githubusercontent.com/zygmuntz/goodbooks-10k/master/ratings.csv'
-    
     books_raw = pd.read_csv(books_url)
     ratings_raw = pd.read_csv(ratings_url)
     
     books_df = books_raw[['book_id', 'title', 'authors', 'image_url']].copy()
-    books_df['genres'] = 'General'
+    books_df['genres'] = 'Academic / Literature'
     books_df['description'] = books_df['title'] + ' by ' + books_df['authors']
     
     user_counts = ratings_raw['user_id'].value_counts()
     active_users = user_counts[user_counts >= 15].index[:1200]
-    
     ratings_df = ratings_raw[ratings_raw['user_id'].isin(active_users)].copy()
-    valid_books = set(books_df['book_id']).intersection(set(ratings_df['book_id']))
     
+    valid_books = set(books_df['book_id']).intersection(set(ratings_df['book_id']))
     books_df = books_df[books_df['book_id'].isin(valid_books)].reset_index(drop=True)
     ratings_df = ratings_df[ratings_df['book_id'].isin(valid_books)].reset_index(drop=True)
     return books_df, ratings_df
@@ -129,42 +154,96 @@ def load_data():
 def get_model(books_df, ratings_df):
     return DigitalLibraryHybridRecommender(books_df, ratings_df)
 
-# 4. Streamlit Dashboard Layout
-st.title("📚 Digital Library Recommender Portal")
-st.markdown("### Mitigating Information Overload with Hybrid Filtering")
+books_df, ratings_df = load_data()
+recommender = get_model(books_df, ratings_df)
 
-with st.spinner("Loading library catalog and training latent factors..."):
-    books_df, ratings_df = load_data()
-    recommender = get_model(books_df, ratings_df)
+# ==========================================
+# 5. USER INTERFACE FLOW
+# ==========================================
 
-st.sidebar.header("⚙️ User & Engine Settings")
-available_users = sorted(ratings_df['user_id'].unique().tolist())
-selected_user_id = st.sidebar.selectbox("Select Student / User ID", options=available_users, index=0)
-top_k = st.sidebar.slider("Number of Recommendations (Top-K)", min_value=3, max_value=15, value=5, step=1)
-alpha = st.sidebar.slider("Hybrid Balance (α Weight)", min_value=0.0, max_value=1.0, value=0.6, step=0.05)
+# LOGIN SCREEN
+if not st.session_state.user_logged_in:
+    col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
+    with col_l2:
+        st.markdown("<div class='main-header'>🏛️ Digital Library Portal</div>", unsafe_allow_html=True)
+        st.markdown("<div class='sub-header'>Student Personalized Catalog & Book Discovery System</div>", unsafe_allow_html=True)
+        
+        with st.form("login_form"):
+            st.markdown("#### Patron Sign In")
+            name_input = st.text_input("Enter Student ID / Full Name", placeholder="e.g., Yusuf / UABJ-2026-CS")
+            submitted = st.form_submit_button("Access Digital Library", use_container_width=True)
+            
+            if submitted and name_input.strip():
+                st.session_state.username = name_input.strip()
+                st.session_state.user_logged_in = True
+                st.rerun()
 
-col_history, col_recs = st.columns([1, 2], gap="large")
+# MAIN REPOSITORY & RECOMMENDATION DASHBOARD
+else:
+    # Top Bar / Profile Bar
+    top1, top2 = st.columns([3, 1])
+    with top1:
+        st.markdown(f"<div class='main-header'>📚 Welcome, {st.session_state.username}</div>", unsafe_allow_html=True)
+        st.caption("Personalized Catalog Discovery Engine • Hybrid Information Retrieval Pipeline")
+    with top2:
+        if st.button("🚪 Log Out / Switch User", use_container_width=True):
+            st.session_state.user_logged_in = False
+            st.session_state.username = ""
+            st.session_state.my_ratings = {}
+            st.rerun()
+            
+    st.divider()
 
-with col_history:
-    st.subheader("👤 User Reading Profile")
-    user_history = ratings_df[ratings_df['user_id'] == selected_user_id].merge(books_df, on='book_id')
-    user_history = user_history.sort_values(by='rating', ascending=False)
-    st.write(f"Total Books Read/Rated: **{len(user_history)}**")
+    # Sidebar Controls
+    st.sidebar.header("⚙️ Recommender Settings")
+    top_k = st.sidebar.slider("Recommendations Count (Top-K)", min_value=3, max_value=12, value=5, step=1)
+    alpha = st.sidebar.slider(
+        "Hybrid Weight (α Balance)",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.6,
+        step=0.05,
+        help="α = 0.0 (Pure Content-Based) | α = 0.6 (Optimal Hybrid) | α = 1.0 (Pure Collaborative Filtering)"
+    )
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("#### 📖 Add Books to Profile")
+    st.sidebar.write("Select books you have read or are interested in to tune your recommendations:")
     
-    for _, row in user_history.head(5).iterrows():
-        with st.container():
-            st.markdown(f"**{row['title']}**")
-            st.caption(f"Author(s): {row['authors']} | Given Rating: **⭐ {row['rating']:.1f}/5**")
-            st.divider()
-
-with col_recs:
-    st.subheader(f"🎯 Top-{top_k} Personalized Recommendations")
-    recs_df = recommender.recommend_for_user(user_id=selected_user_id, top_k=top_k, alpha=alpha)
+    book_titles = dict(zip(books_df['title'] + " (by " + books_df['authors'] + ")", books_df['book_id']))
+    selected_book_title = st.sidebar.selectbox("Search & Select Book", options=list(book_titles.keys()))
+    rating_given = st.sidebar.slider("Your Rating", 1.0, 5.0, 4.0, 0.5)
     
-    if recs_df.empty:
-        st.warning("No recommendations could be generated.")
-    else:
-        for idx, row in recs_df.reset_index().iterrows():
+    if st.sidebar.button("➕ Add to My Profile", use_container_width=True):
+        b_id = book_titles[selected_book_title]
+        st.session_state.my_ratings[b_id] = rating_given
+        st.sidebar.success("Added to reading profile!")
+        st.rerun()
+
+    # Main Grid: Reading Shelf vs Personalized Feed
+    col_profile, col_feed = st.columns([1, 2], gap="large")
+
+    with col_profile:
+        st.markdown("### 🗂️ My Reading Shelf")
+        if not st.session_state.my_ratings:
+            st.info("Your shelf is currently empty. Add 2–3 books from the sidebar to activate personalized hybrid recommendations.")
+        else:
+            st.write(f"Total Books Rated: **{len(st.session_state.my_ratings)}**")
+            for b_id, score in list(st.session_state.my_ratings.items()):
+                book_row = books_df[books_df['book_id'] == b_id].iloc[0]
+                with st.container():
+                    st.markdown(f"**{book_row['title']}**")
+                    st.caption(f"Author: {book_row['authors']} | Rating: ⭐ **{score:.1f}/5.0**")
+                    if st.button("❌ Remove", key=f"del_{b_id}"):
+                        del st.session_state.my_ratings[b_id]
+                        st.rerun()
+                    st.divider()
+
+    with col_feed:
+        st.markdown(f"### 🎯 Recommended For You (Top-{top_k})")
+        recs = recommender.recommend_for_custom_profile(st.session_state.my_ratings, top_k=top_k, alpha=alpha)
+        
+        for idx, row in recs.reset_index().iterrows():
             with st.container():
                 c1, c2 = st.columns([1, 4])
                 with c1:
@@ -175,6 +254,7 @@ with col_recs:
                 with c2:
                     st.markdown(f"#### #{idx+1}. {row['title']}")
                     st.markdown(f"**Author(s):** {row['authors']}")
+                    
                     m1, m2, m3 = st.columns(3)
                     m1.metric("Predicted Rating", f"⭐ {row['predicted_rating']:.2f}/5")
                     m2.metric("Content Match", f"{row['content_score'] * 100:.1f}%")
