@@ -184,7 +184,7 @@ else:
     top1, top2 = st.columns([3, 1])
     with top1:
         st.markdown(f"<div class='main-header'>Repository Account: {st.session_state.username}</div>", unsafe_allow_html=True)
-        st.markdown("<div class='sub-caption'>Personalized Catalog Discovery Engine | Institutional Hybrid Pipeline</div>", unsafe_allow_html=True)
+        st.markdown("<div class='sub-caption'>Personalized Catalog Discovery Engine</div>", unsafe_allow_html=True)
     with top2:
         if st.button("Log Out", use_container_width=True):
             st.session_state.user_logged_in = False
