@@ -9,7 +9,7 @@ from surprise import Dataset, Reader, SVD
 # 1. PAGE CONFIGURATION & INSTITUTIONAL STYLING
 # ==========================================
 st.set_page_config(
-    page_title="Institutional Digital Library | Recommender Portal",
+    page_title="Institutional Digital Library",
     layout="wide"
 )
 
